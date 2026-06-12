@@ -1,0 +1,75 @@
+---
+title: Figure 2
+---
+
+You should install following packages:
+```{r}
+#| code-fold: true
+#| output: false
+#| eval: false
+pak::pak("bench")
+pak::pak("ggplot2")
+pak::pak("GEOquery")
+pak::pak("WangLabCSU/geokit")
+pak::pak("WangLabCSU/geokit@49717ddc616b684e916e165b4eb508ca492f9ccf") # install rgeo
+```
+
+```{r}
+#| code-fold: true
+#| output: false
+if (!dir.exists("rawdata/Figure 2")) {
+    dir.create("rawdata/Figure 2", recursive = TRUE)
+}
+if (!dir.exists("Figure 2")) {
+    dir.create("Figure 2")
+}
+library(GEOquery)
+library(rgeo) # Use data.table as the backend
+library(geokit) # Use rust as the backend
+```
+
+```{r}
+diabete_records <- geo_search("diabetes[ALL] AND Homo sapiens[ORGN] AND GSE[ETYP]")
+diabete_meta <- geo_meta(
+    diabete_records[["Series Accession"]],
+    handle_opts = list(connecttimeout = 600L),
+    odir = "rawdata/Figure 2"
+)
+```
+
+```{r}
+#| code-fold: false
+#| eval: false
+comparative_soft <- bench::mark(
+    `geokit(rust)` = geo_soft("GSE67705", odir = "rawdata/Figure 2"),
+    `geokit(data.table)` = get_geo(
+        "GSE67705",
+        gse_matrix = FALSE,
+        dest_dir = "rawdata/Figure 2"
+    ),
+    GEOquery = getGEO("GSE67705", GSEMatrix = FALSE, destdir = "rawdata/Figure 2"),
+    max_iterations = 1L,
+    check = FALSE,
+    memory = TRUE
+)
+saveRDS(comparative_soft, "Figure 2/comparative_soft.rds")
+```
+
+```{r}
+#| code-fold: false
+#| eval: false
+comparative_meta <- bench::mark(
+    `geokit(rust)` = geo_meta(
+        diabete_records[["Series Accession"]],
+        odir = "rawdata/Figure 2"
+    ),
+    `geokit(data.table)` = get_geo_meta(
+        diabete_records[["Series Accession"]],
+        dest_dir = "rawdata/Figure 2"
+    ),
+    max_iterations = 1L,
+    check = FALSE,
+    memory = FALSE
+)
+saveRDS(comparative_meta, "Figure 2/comparative_meta.rds")
+```
