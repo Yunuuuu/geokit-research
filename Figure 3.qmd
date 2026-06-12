@@ -1,0 +1,31 @@
+---
+title: Figure 2
+---
+
+You should install following packages:
+```{r}
+#| code-fold: true
+#| output: false
+#| eval: false
+pak::pak("WangLabCSU/geokit")
+```
+
+```{r}
+#| code-fold: true
+#| output: false
+if (!dir.exists("rawdata/Figure 3")) {
+    dir.create("rawdata/Figure 3", recursive = TRUE)
+}
+if (!dir.exists("Figure 3")) {
+    dir.create("Figure 3")
+}
+library(geokit)
+```
+
+```{r}
+#| code-fold: false
+#| eval: false
+# you should add environment variable 'DEEPSEEK_API_KEY'
+gse_records <- geo_search("diabetes[ALL] AND Homo sapiens[ORGN] AND GSE[ETYP]")
+geo_shiny(gse_records, client = ellmer::chat_deepseek())
+```
