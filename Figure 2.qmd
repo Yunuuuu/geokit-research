@@ -1,8 +1,26 @@
 ---
-title: Figure 2
+title: "Figure 2"
 ---
 
-You should install following packages:
+## Overview
+
+Figure 2 evaluates the performance of `geokit` for representative GEO data reuse
+tasks. The benchmark focuses on two common operations: parsing complete GEO SOFT
+records and extracting metadata from a disease-specific GEO collection. The
+comparison includes the Rust-backed implementation in `geokit`, the earlier
+data.table-backed implementation, and `GEOquery` where applicable. 
+
+The SOFT parsing benchmark uses accession `GSE67705` and compares elapsed time
+and memory allocation. The metadata benchmark uses GEO Series records returned
+from a real-time NCBI E-utils search for human diabetes datasets and compares
+elapsed time for metadata parsing. 
+
+To reduce the influence of network variation, GEO files are first downloaded to `rawdata/Figure 2`. The benchmark therefore mainly reflects parsing and metadata extraction from locally cached files.
+
+## Required packages
+
+The following packages are required.
+
 ```{r}
 #| code-fold: true
 #| output: false
@@ -12,8 +30,9 @@ pak::pak("ggplot2")
 pak::pak("GEOquery")
 pak::pak("WangLabCSU/geokit")
 pak::pak("WangLabCSU/geokit@49717ddc616b684e916e165b4eb508ca492f9ccf") # install rgeo
-```
+````
 
+## Setup
 ```{r}
 #| code-fold: true
 #| output: false
@@ -23,31 +42,62 @@ if (!dir.exists("rawdata/Figure 2")) {
 if (!dir.exists("Figure 2")) {
     dir.create("Figure 2")
 }
+
 library(GEOquery)
-library(rgeo) # Use data.table as the backend
-library(geokit) # Use rust as the backend
+library(rgeo) # data.table-backed implementation
+library(geokit) # Rust-backed implementation
+library(ggplot2)
 ```
 
+## GEO search and metadata collection
+
+This section constructs a disease-specific GEO collection using a real-time
+E-utils query. The query retrieves human GEO Series records associated with
+diabetes. These records are then used as input for the metadata benchmark.
+Before benchmarking, `geo_meta()` is run once to download and cache the required
+GEO files.
+
 ```{r}
-diabete_records <- geo_search("diabetes[ALL] AND Homo sapiens[ORGN] AND GSE[ETYP]")
-diabete_meta <- geo_meta(
-    diabete_records[["Series Accession"]],
+diabetes_records <- geo_search(
+    "diabetes[ALL] AND Homo sapiens[ORGN] AND GSE[ETYP]"
+)
+diabetes_meta <- geo_meta(
+    diabetes_records[["Series Accession"]],
     handle_opts = list(connecttimeout = 600L),
     odir = "rawdata/Figure 2"
 )
+# Download data, GEOquery use different naming convention
+getGEO( # GSE67705.soft.gz
+    "GSE67705",
+    GSEMatrix = FALSE,
+    destdir = "rawdata/Figure 2"
+)
 ```
+
+## Benchmark 1: GEO SOFT parsing
+
+The first benchmark compares complete GEO SOFT parsing for `GSE67705`. This task
+evaluates the ability of each implementation to parse a full GEO Series SOFT
+record. Both timing and memory allocation are recorded for this benchmark.
 
 ```{r}
 #| code-fold: false
 #| eval: false
 comparative_soft <- bench::mark(
-    `geokit(rust)` = geo_soft("GSE67705", odir = "rawdata/Figure 2"),
-    `geokit(data.table)` = get_geo(
+    `geokit(rust)` = geo_soft(
+        "GSE67705",
+        odir = "rawdata/Figure 2"
+    ),
+    `geokit(data.table)` = get_geo( # GSE67705_family.soft.gz
         "GSE67705",
         gse_matrix = FALSE,
         dest_dir = "rawdata/Figure 2"
     ),
-    GEOquery = getGEO("GSE67705", GSEMatrix = FALSE, destdir = "rawdata/Figure 2"),
+    GEOquery = getGEO( # GSE67705.soft.gz
+        "GSE67705",
+        GSEMatrix = FALSE,
+        destdir = "rawdata/Figure 2"
+    ),
     max_iterations = 1L,
     check = FALSE,
     memory = TRUE
@@ -55,16 +105,21 @@ comparative_soft <- bench::mark(
 saveRDS(comparative_soft, "Figure 2/comparative_soft.rds")
 ```
 
+## Benchmark 2: GEO metadata retrieval
+
+The second benchmark compares metadata retrieval for the diabetes-related GEO
+Series accessions identified above. This benchmark focuses on elapsed time only.
+
 ```{r}
 #| code-fold: false
 #| eval: false
 comparative_meta <- bench::mark(
     `geokit(rust)` = geo_meta(
-        diabete_records[["Series Accession"]],
+        diabetes_records[["Series Accession"]],
         odir = "rawdata/Figure 2"
     ),
     `geokit(data.table)` = get_geo_meta(
-        diabete_records[["Series Accession"]],
+        diabetes_records[["Series Accession"]],
         dest_dir = "rawdata/Figure 2"
     ),
     max_iterations = 1L,
@@ -72,4 +127,93 @@ comparative_meta <- bench::mark(
     memory = FALSE
 )
 saveRDS(comparative_meta, "Figure 2/comparative_meta.rds")
+```
+
+## Load benchmark results
+
+```{r}
+soft_rds <- "Figure 2/comparative_soft.rds"
+meta_rds <- "Figure 2/comparative_meta.rds"
+if (!file.exists(soft_rds)) {
+    stop("Missing benchmark result: ", soft_rds)
+}
+if (!file.exists(meta_rds)) {
+    stop("Missing benchmark result: ", meta_rds)
+}
+file.info("rawdata/Figure 2/GSE67705_family.soft.gz")$size / 1024^3
+file.info("rawdata/Figure 2/GSE67705.soft.gz")$size / 1024^3
+comparative_soft <- readRDS(soft_rds)
+comparative_meta <- readRDS(meta_rds)
+```
+
+## SOFT parsing time
+
+```{r}
+#| label: fig-soft-time
+#| fig-cap: "Elapsed time for GEO SOFT parsing of GSE67705."
+#| fig-width: 6
+#| fig-height: 3.5
+A <- comparative_soft |>
+    dplyr::mutate(
+        id = names(expression),
+        id = factor(id, unique(id))
+    ) |>
+    ggplot(aes(x = id, y = total_time)) +
+    geom_col(aes(fill = id, color = after_scale(fill)), width = 0.7) +
+    geom_text(
+        aes(label = sprintf("%ds", as.integer(total_time))),
+        vjust = -0.5
+    ) +
+    scale_fill_brewer(palette = "Set2", guide = "none") +
+    labs(x = NULL, y = "Elapsed time (seconds)") +
+    theme_classic(base_size = 12)
+ggsave("Figure 2/A.pdf", plot = A, height = 5, width = 6)
+```
+
+## SOFT parsing memory allocation
+
+```{r}
+#| label: fig-soft-memory
+#| fig-cap: "Memory allocation for GEO SOFT parsing of GSE67705."
+#| fig-width: 6
+#| fig-height: 3.5
+B <- comparative_soft |>
+    dplyr::mutate(
+        id = names(expression),
+        id = factor(id, unique(id))
+    ) |>
+    ggplot(aes(x = id, y = mem_alloc / 1024^3)) +
+    geom_col(aes(fill = id, color = after_scale(fill)), width = 0.7) +
+    geom_text(
+        aes(label = sprintf("%.2fGB", mem_alloc / 1024^3)),
+        vjust = -0.5
+    ) +
+    scale_fill_brewer(palette = "Set2", guide = "none") +
+    labs(x = NULL, y = "Memory allocation (GB)") +
+    theme_classic(base_size = 12)
+ggsave("Figure 2/B.pdf", plot = B, height = 5, width = 6)
+```
+
+## Metadata retrieval time
+
+```{r}
+#| label: fig-meta-time
+#| fig-cap: "Elapsed time for metadata parsing from diabetes-related human GEO Series records."
+#| fig-width: 6
+#| fig-height: 3.5
+C <- comparative_meta |>
+    dplyr::mutate(
+        id = names(expression),
+        id = factor(id, unique(id))
+    ) |>
+    ggplot(aes(x = id, y = total_time / 60)) +
+    geom_col(aes(fill = id, color = after_scale(fill)), width = 0.7) +
+    geom_text(
+        aes(label = sprintf("%.2fmin", total_time / 60)),
+        vjust = -0.5
+    ) +
+    scale_fill_brewer(palette = "Set2", guide = "none") +
+    labs(x = NULL, y = "Elapsed time (minutes)") +
+    theme_classic(base_size = 12)
+ggsave("Figure 2/C.pdf", plot = C, height = 5, width = 4)
 ```
