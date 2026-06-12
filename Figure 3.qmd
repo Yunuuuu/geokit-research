@@ -13,12 +13,6 @@ pak::pak("WangLabCSU/geokit")
 ```{r}
 #| code-fold: true
 #| output: false
-if (!dir.exists("rawdata/Figure 3")) {
-    dir.create("rawdata/Figure 3", recursive = TRUE)
-}
-if (!dir.exists("Figure 3")) {
-    dir.create("Figure 3")
-}
 library(geokit)
 ```
 
